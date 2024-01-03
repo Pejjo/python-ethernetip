@@ -424,21 +424,19 @@ class EtherNetIP(object):
         :param inst: instance of the assembly
         :param conn: connection to use
 
-        :returns: array of bits with size of 8 times the size parameter
+        :returns: array of bytes with size of the size parameter
         """
         if (inst, conn) in self.assembly:
             print("Reg assembly failed for iotype=", iotype)
             return None
-        bits = []
-        for i in range(size * 8):
-            bits.append(0)
-        self.assembly[(inst, conn)] = (conn, iotype, bits)
+        databytes = [0] * size
+        self.assembly[(inst, conn)] = (conn, iotype, databytes)
         if conn is not None:
             if iotype == EtherNetIP.ENIP_IO_TYPE_INPUT:
-                conn.mapIn(bits)
+                conn.mapIn(databytes)
             elif iotype == EtherNetIP.ENIP_IO_TYPE_OUTPUT:
-                conn.mapOut(bits)
-        return bits
+                conn.mapOut(databytes)
+        return databytes
 
     def startIO(self):
         """
@@ -481,17 +479,11 @@ class EtherNetIP(object):
                 for inst in self.assembly:
                     conn = self.assembly[inst][0]
                     iotype = self.assembly[inst][1]
-                    bits = self.assembly[inst][2]
+                    databytes = self.assembly[inst][2]
                     # update i/o
                     if conn.ipaddr == addr and iotype == EtherNetIP.ENIP_IO_TYPE_INPUT and pkt.conn_id == conn.toconnid:
-                        i = 0
-                        for byte in pkt.data:
-                            for s in range(8):
-                                if byte & (1 << s):
-                                    bits[i] = True
-                                else:
-                                    bits[i] = False
-                                i += 1
+                        for i, d in enumerate(databytes):
+                            databytes[i]=pkt.data[i]
 
     def explicit_conn(self, ipaddr=None):
         """
@@ -809,12 +801,12 @@ class EtherNetIPExpConnection(EtherNetIPSession):
         otrpi *= 1000
         if inputsz is None:
             if self.inAssem is not None:
-                inputsz = len(self.inAssem) / 8
+                inputsz = len(self.inAssem)
             else:
                 inputsz = 8
         if outputsz is None:
             if self.outAssem is not None:
-                outputsz = len(self.outAssem) / 8
+                outputsz = len(self.outAssem)
             else:
                 outputsz = 8
         outputsz += 6  # seq num and run/idle header
@@ -971,14 +963,8 @@ class EtherNetIPExpConnection(EtherNetIPSession):
             output += b"\x01\x00\x00\x00"
         cnt = 0
         val = 0
-        for bit in self.outAssem:
-            if bit is True:
-                val += 1 << cnt
-            cnt += 1
-            if cnt == 8:
-                cnt = 0
-                output += struct.pack("B", val)
-                val = 0
+
+        output += bytearray(self.outAssem)
 
         pkt = UdpSendDataPacket(seq_num=self.seqnum, seq_count=self.seqnum & 0xffff,
                                 conn_id=self.otconnid,
